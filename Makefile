@@ -5,12 +5,14 @@ docker-publish-gcr:
 
 
 docker-publish-dockerhub:
-	docker build -t frigate-events-telegram .
-	docker tag frigate-events-telegram geffersonferraz/frigate-events-telegram:latest
-	docker push geffersonferraz/frigate-events-telegram:latest
+	go build -o frigate-events-telegram -ldflags="-s -w"
 
-	docker tag frigate-events-telegram geffersonferraz/frigate-events-telegram:$(shell git rev-parse --short HEAD)
-	docker push geffersonferraz/frigate-events-telegram:$(shell git rev-parse --short HEAD)
-	
+	docker build -t frigate-events-telegram .
+	docker tag frigate-events-telegram geffws/frigate-events-telegram:latest
+	docker push geffws/frigate-events-telegram:latest
+
+	docker tag frigate-events-telegram geffws/frigate-events-telegram:$(shell git rev-parse --short HEAD)
+	docker push geffws/frigate-events-telegram:$(shell git rev-parse --short HEAD)
+
 
 

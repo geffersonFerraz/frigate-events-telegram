@@ -11,13 +11,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy the entire source code into the container
-COPY . .
-
-# Build the application
-RUN go build -o frigate-events-telegram -ldflags="-s -w"
+COPY frigate-events-telegram .
+COPY config.yaml.example .
 
 # Document the port that may need to be published
 USER 1000
 
 # Start the application
-CMD ["/build/frigate-events-telegram"]
+CMD ["/frigate-events-telegram"]
