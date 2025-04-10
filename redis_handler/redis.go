@@ -45,10 +45,21 @@ func (h *RedisHandler) IsEventProcessed(ctx context.Context, eventID string, eve
 // MarkEventAsProcessed marca um evento como processado
 func (h *RedisHandler) MarkEventAsProcessed(ctx context.Context, eventID string, eventType string) error {
 	key := fmt.Sprintf("frigate:event:%s:%s", eventType, eventID)
-	// Armazenar o evento por 24 horas
-	if err := h.client.Set(ctx, key, "processed", 24*time.Hour).Err(); err != nil {
+
+	// Usar SET com opção EX para definir a expiração em segundos (2 horas = 7200 segundos)
+	if err := h.client.Set(ctx, key, "processed", 2*time.Hour).Err(); err != nil {
 		return fmt.Errorf("erro ao marcar evento como processado: %w", err)
 	}
+
+	// Verificar se a expiração foi definida corretamente
+	ttl, err := h.client.TTL(ctx, key).Result()
+	if err != nil {
+		return fmt.Errorf("erro ao verificar TTL da chave: %w", err)
+	}
+	if ttl < 0 {
+		return fmt.Errorf("erro: TTL não foi definido para a chave %s", key)
+	}
+
 	return nil
 }
 

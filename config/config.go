@@ -28,6 +28,7 @@ type Config struct {
 	RedisAddr      string  `mapstructure:"redis_addr"`
 	RedisPassword  string  `mapstructure:"redis_password"`
 	RedisDB        int     `mapstructure:"redis_db"`
+	TimezoneAjust  int     `mapstructure:"timezone_ajust"`
 	Groups         []Group `mapstructure:"-"`
 }
 
@@ -60,6 +61,7 @@ func LoadConfig() (*Config, error) {
 	v.SetDefault("redis_addr", "localhost:6379")
 	v.SetDefault("redis_password", "")
 	v.SetDefault("redis_db", 0)
+	v.SetDefault("timezone_ajust", -3)
 
 	// Deserializar a configuração lida para a struct Config
 	var cfg Config

@@ -130,7 +130,7 @@ func (h *AppHandler) processVideoEvent(ctx context.Context, event FrigateEvent, 
 		caption := fmt.Sprintf("Frigate Event Clip: %s\nCamera: %s\nTimestamp: %s",
 			event.After.Label,
 			event.After.Camera,
-			time.Unix(int64(event.After.StartTime), 0).Format(time.RFC1123))
+			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format(time.RFC1123))
 
 		log.Printf("Tentando enviar clipe do evento %s (%d bytes) para o Telegram...", event.After.ID, len(videoBytes))
 
@@ -216,7 +216,7 @@ func (h *AppHandler) handleMQTTMessage(client mqtt.Client, msg mqtt.Message) {
 		caption := fmt.Sprintf("Frigate Event: %s\nCamera: %s\nTimestamp: %s",
 			event.After.Label,
 			event.After.Camera,
-			time.Unix(int64(event.After.StartTime), 0).Format(time.RFC1123))
+			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format(time.RFC1123))
 
 		// Enviar foto pelo Telegram
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
