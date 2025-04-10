@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN go build -o frigate-events-telegram
+RUN go build -o frigate-events-telegram -ldflags="-s -w"
 
 # Document the port that may need to be published
 USER 1000
