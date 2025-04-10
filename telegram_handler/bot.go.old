@@ -1,0 +1,77 @@
+package telegram_handler
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
+)
+
+// TelegramBot encapsula o cliente do bot Telegram
+type TelegramBot struct {
+	bot    *tgbot.Bot
+	chatID int64
+}
+
+// NewBot cria uma nova instância do bot Telegram
+func NewBot(token string, chatID int64) (*TelegramBot, error) {
+	opts := []tgbot.Option{
+		// Adicionar opções se necessário (ex: custom http client)
+	}
+	b, err := tgbot.New(token, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao criar bot do Telegram: %w", err)
+	}
+	fmt.Println("Bot do Telegram inicializado")
+	return &TelegramBot{bot: b, chatID: chatID}, nil
+}
+
+// SendMessage envia uma mensagem de texto
+func (tb *TelegramBot) SendMessage(ctx context.Context, text string) error {
+	_, err := tb.bot.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID: tb.chatID,
+		Text:   text,
+	})
+	if err != nil {
+		return fmt.Errorf("erro ao enviar mensagem para o Telegram: %w", err)
+	}
+	return nil
+}
+
+// SendPhoto envia uma foto
+func (tb *TelegramBot) SendPhoto(ctx context.Context, photo []byte, caption string) error {
+	// A biblioteca espera um InputFile. Criamos um InputFileUpload a partir dos bytes.
+	params := &tgbot.SendPhotoParams{
+		ChatID: tb.chatID,
+		Photo: &models.InputFileUpload{
+			Data:     bytes.NewReader(photo),
+			Filename: "event.jpg", // Nome do arquivo é importante aqui
+		},
+		Caption: caption,
+	}
+	_, err := tb.bot.SendPhoto(ctx, params)
+	if err != nil {
+		return fmt.Errorf("erro ao enviar foto para o Telegram: %w", err)
+	}
+	return nil
+}
+
+// SendVideo envia um vídeo
+func (tb *TelegramBot) SendVideo(ctx context.Context, video []byte, caption string) error {
+	params := &tgbot.SendVideoParams{
+		ChatID: tb.chatID,
+		Video: &models.InputFileUpload{
+			Data:     bytes.NewReader(video),
+			Filename: "event.mp4", // Nome do arquivo para o Telegram
+		},
+		Caption: caption,
+		// Adicionar outras opções se necessário (ex: SupportsStreaming = true)
+	}
+	_, err := tb.bot.SendVideo(ctx, params)
+	if err != nil {
+		return fmt.Errorf("erro ao enviar vídeo para o Telegram: %w", err)
+	}
+	return nil
+}

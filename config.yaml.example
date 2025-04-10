@@ -1,0 +1,25 @@
+# Exemplo de arquivo de configuração config.yaml
+# Copie este arquivo para config.yaml e preencha os valores.
+
+mqtt_broker: tcp://localhost:1883 # Endereço do broker MQTT
+mqtt_user: ""                   # Usuário MQTT (opcional, deixe em branco se não usar)
+mqtt_password: ""             # Senha MQTT (opcional)
+mqtt_topic: frigate/events      # Tópico MQTT dos eventos do Frigate
+
+telegram_token: "SEU_TOKEN_AQUI"  # Token do bot do Telegram
+telegram_chat_id: 0                # ID do chat do Telegram (substitua por um número)
+
+frigate_url: "http://localhost:5000" # URL base da API do Frigate 
+
+redis_addr: "localhost:6379"
+redis_password: "sua_senha_redis"  # deixe vazio se não tiver senha
+redis_db: 0
+
+groups:
+  - General|1
+  - Rua|3
+  - TrasPorta|366
+  - Tras|4
+  - FimRua|5
+  - Bolacha|2
+  - Portao|26
