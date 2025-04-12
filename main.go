@@ -272,14 +272,21 @@ func main() {
 	defer redis.Close()
 
 	// Inicializar bot do Telegram
-	tgBot, err := telegram_handler.NewBot(cfg.TelegramToken, cfg.TelegramChatID, cfg.Groups)
+	tgBot, err := telegram_handler.NewBot(telegram_handler.TelegramConfig{
+		Token:         cfg.TelegramToken,
+		DefaultChatID: cfg.TelegramChatID,
+		Groups:        cfg.Groups,
+		UseThreadIDs:  cfg.UseThreadIDs,
+	})
 	if err != nil {
 		log.Fatalf("Erro ao inicializar bot do Telegram: %v", err)
 	}
-	// TODO: Armazenar a instância do bot para uso posterior no messageHandler -> FEITO via AppHandler
+
+	// Iniciar o processamento de comandos do Telegram
+	tgBot.Start(context.Background())
+	defer tgBot.Stop()
 
 	// Inicializar cliente MQTT
-	// Usar um ClientID único se múltiplas instâncias forem rodar
 	mqttClient, err := mqtt_handler.NewClient(cfg.MQTTBroker, "frigate-event-listener", cfg.MQTTUser, cfg.MQTTPassword)
 	if err != nil {
 		log.Fatalf("Erro ao inicializar cliente MQTT: %v", err)
@@ -289,7 +296,7 @@ func main() {
 	appHandler := newAppHandler(tgBot, cfg, redis)
 
 	// Inscrever no tópico de eventos do Frigate usando o método do handler
-	if err := mqttClient.Subscribe(cfg.MQTTTopic, 1, appHandler.handleMQTTMessage); err != nil { // QoS 1: Pelo menos uma vez
+	if err := mqttClient.Subscribe(cfg.MQTTTopic, 1, appHandler.handleMQTTMessage); err != nil {
 		log.Fatalf("Erro ao inscrever no tópico MQTT: %v", err)
 	}
 

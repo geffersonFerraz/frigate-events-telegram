@@ -12,7 +12,7 @@ import (
 // Group representa um grupo do Telegram com seu nome e ID
 type Group struct {
 	Name string
-	ID   int
+	ID   int64
 }
 
 // Config struct para armazenar as configurações da aplicação
@@ -24,6 +24,7 @@ type Config struct {
 	MQTTTopic      string  `mapstructure:"mqtt_topic"`
 	TelegramToken  string  `mapstructure:"telegram_token"`
 	TelegramChatID int64   `mapstructure:"telegram_chat_id"`
+	UseThreadIDs   bool    `mapstructure:"use_thread_ids"`
 	FrigateURL     string  `mapstructure:"frigate_url"`
 	RedisAddr      string  `mapstructure:"redis_addr"`
 	RedisPassword  string  `mapstructure:"redis_password"`
@@ -61,7 +62,8 @@ func LoadConfig() (*Config, error) {
 	v.SetDefault("redis_addr", "localhost:6379")
 	v.SetDefault("redis_password", "")
 	v.SetDefault("redis_db", 0)
-	v.SetDefault("timezone_ajust", -3)
+	v.SetDefault("use_thread_ids", false)
+	v.SetDefault("timezone_ajust", 0)
 
 	// Deserializar a configuração lida para a struct Config
 	var cfg Config
@@ -82,10 +84,12 @@ func LoadConfig() (*Config, error) {
 		}
 		var group Group
 		group.Name = parts[0]
-		if _, err := fmt.Sscanf(parts[1], "%d", &group.ID); err != nil {
+		var id int64
+		if _, err := fmt.Sscanf(parts[1], "%d", &id); err != nil {
 			log.Printf("Aviso: ID inválido para grupo %s: %s", group.Name, parts[1])
 			continue
 		}
+		group.ID = id
 		cfg.Groups = append(cfg.Groups, group)
 	}
 
