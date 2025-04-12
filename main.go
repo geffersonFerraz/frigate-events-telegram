@@ -126,11 +126,16 @@ func (h *AppHandler) processVideoEvent(ctx context.Context, event FrigateEvent, 
 			return
 		}
 
+		// if videoBytes > 49mb, split using first 49mb and send it
+		if len(videoBytes) > 49*1024*1024 {
+			videoBytes = videoBytes[:49*1024*1024]
+		}
+
 		// Criar legenda para o vídeo
-		caption := fmt.Sprintf("Frigate Event Clip: %s\nCamera: %s\nTimestamp: %s",
+		caption := fmt.Sprintf("🎯 %s\n📷 %s\n🕒 %s",
 			event.After.Label,
 			event.After.Camera,
-			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format(time.RFC1123))
+			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"))
 
 		log.Printf("Tentando enviar clipe do evento %s (%d bytes) para o Telegram...", event.After.ID, len(videoBytes))
 
@@ -213,10 +218,10 @@ func (h *AppHandler) handleMQTTMessage(client mqtt.Client, msg mqtt.Message) {
 		}
 
 		// Criar legenda para a foto
-		caption := fmt.Sprintf("Frigate Event: %s\nCamera: %s\nTimestamp: %s",
+		caption := fmt.Sprintf("🎯 %s\n📷 %s\n🕒 %s",
 			event.After.Label,
 			event.After.Camera,
-			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format(time.RFC1123))
+			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"))
 
 		// Enviar foto pelo Telegram
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -238,7 +243,7 @@ func (h *AppHandler) handleMQTTMessage(client mqtt.Client, msg mqtt.Message) {
 		clipURL := fmt.Sprintf("%s/api/events/%s/clip.mp4", strings.TrimSuffix(h.cfg.FrigateURL, "/"), event.After.ID)
 
 		// Processar o vídeo em uma goroutine separada
-		h.processVideoEvent(context.Background(), event, clipURL)
+		go h.processVideoEvent(context.Background(), event, clipURL)
 
 		// Marcar evento como processado após iniciar o processamento do vídeo
 		if err := h.redis.MarkEventAsProcessed(ctx, event.After.ID, event.Type); err != nil {
