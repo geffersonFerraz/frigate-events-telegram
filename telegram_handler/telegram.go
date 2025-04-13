@@ -5,11 +5,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/geffersonFerraz/frigate-events-telegram/config"
+	"github.com/geffersonFerraz/frigate-events-telegram/redis_handler"
 	tgbotapi "github.com/go-telegram/bot"
 	"github.com/google/uuid"
 
@@ -24,6 +26,7 @@ type TelegramBot struct {
 	Groups        []config.Group
 	UseThreadIDs  bool
 	StartTime     time.Time
+	Redis         *redis_handler.RedisHandler
 }
 
 type Telegram interface {
@@ -54,6 +57,7 @@ func NewBot(config TelegramBot) (Telegram, error) {
 		UseThreadIDs:  config.UseThreadIDs,
 		StartTime:     time.Now(),
 		Bot:           bot,
+		Redis:         config.Redis,
 	}
 
 	return tb, nil
@@ -69,7 +73,10 @@ func (b *TelegramBot) Stop(ctx context.Context) (bool, error) {
 
 // RegisterHandler registra um handler para o bot
 func (b *TelegramBot) RegisterHandlers(ctx context.Context) {
-	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/", tgbotapi.MatchTypePrefix, b.handleStatus)
+	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/status", tgbotapi.MatchTypePrefix, b.handleStatus)
+	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/clean", tgbotapi.MatchTypePrefix, b.handleClean)
+	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/restart", tgbotapi.MatchTypePrefix, b.handleRestart)
+	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/help", tgbotapi.MatchTypePrefix, b.handleHelp)
 }
 
 // SendMessage envia uma mensagem de texto para o chat especificado
@@ -218,9 +225,27 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%d segundos", seconds)
 }
 
+func (b *TelegramBot) handleClean(ctx context.Context, bot *tgbotapi.Bot, update *models.Update) {
+	// limpa tudo que for do redis
+	b.Redis.FlushAll(ctx)
+	bot.SendMessage(ctx, stringToMessage("Redis limpo com sucesso!", update.Message.Chat.ID, &update.Message.MessageThreadID))
+}
+
 func (b *TelegramBot) handleRestart(ctx context.Context, bot *tgbotapi.Bot, update *models.Update) {
 	bot.SendMessage(ctx, stringToMessage("Reiniciando o bot...", update.Message.Chat.ID, &update.Message.MessageThreadID))
+	os.Exit(0)
+}
 
+func (b *TelegramBot) handleHelp(ctx context.Context, bot *tgbotapi.Bot, update *models.Update) {
+	commands := []string{
+		"🔄 /restart - Reinicia o bot",
+		"📸 /snapshot [câmera] - Tira um snapshot da câmera especificada",
+		"🧹 /clean - Limpa dados temporários",
+		"ℹ️ /status - Mostra o status do sistema",
+		"❓ /help - Mostra esta mensagem de ajuda",
+	}
+
+	bot.SendMessage(ctx, stringToMessage(strings.Join(commands, "\n"), update.Message.Chat.ID, &update.Message.MessageThreadID))
 }
 
 func stringToMessage(text string, chatID int64, messageThreadID *int) *tgbotapi.SendMessageParams {

@@ -277,6 +277,7 @@ func main() {
 		DefaultChatID: cfg.TelegramChatID,
 		Groups:        cfg.Groups,
 		UseThreadIDs:  cfg.UseThreadIDs,
+		Redis:         redis,
 	})
 	if err != nil {
 		log.Fatalf("Erro ao inicializar bot do Telegram: %v", err)

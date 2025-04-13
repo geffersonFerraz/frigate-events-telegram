@@ -32,6 +32,11 @@ func NewRedisHandler(addr, password string, db int) (*RedisHandler, error) {
 	}, nil
 }
 
+// FlushAll limpa todos os dados do Redis
+func (h *RedisHandler) FlushAll(ctx context.Context) error {
+	return h.client.FlushAll(ctx).Err()
+}
+
 // IsEventProcessed verifica se um evento já foi processado
 func (h *RedisHandler) IsEventProcessed(ctx context.Context, eventID string, eventType string) (bool, error) {
 	key := fmt.Sprintf("frigate:event:%s:%s", eventType, eventID)
