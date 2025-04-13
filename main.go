@@ -45,14 +45,14 @@ type FrigateEvent struct {
 
 // AppHandler contém as dependências necessárias para o handler MQTT
 type AppHandler struct {
-	tgBot      *telegram_handler.TelegramBot
+	tgBot      telegram_handler.Telegram
 	cfg        *config.Config
 	httpClient *http.Client // Para buscar a imagem
 	redis      *redis_handler.RedisHandler
 }
 
 // newAppHandler cria uma nova instância do AppHandler
-func newAppHandler(bot *telegram_handler.TelegramBot, cfg *config.Config, redis *redis_handler.RedisHandler) *AppHandler {
+func newAppHandler(bot telegram_handler.Telegram, cfg *config.Config, redis *redis_handler.RedisHandler) *AppHandler {
 	return &AppHandler{
 		tgBot:      bot,
 		cfg:        cfg,
@@ -272,7 +272,7 @@ func main() {
 	defer redis.Close()
 
 	// Inicializar bot do Telegram
-	tgBot, err := telegram_handler.NewBot(telegram_handler.TelegramConfig{
+	tgBot, err := telegram_handler.NewBot(telegram_handler.TelegramBot{
 		Token:         cfg.TelegramToken,
 		DefaultChatID: cfg.TelegramChatID,
 		Groups:        cfg.Groups,
@@ -281,27 +281,36 @@ func main() {
 	if err != nil {
 		log.Fatalf("Erro ao inicializar bot do Telegram: %v", err)
 	}
-
+	ctx := context.Background()
 	// Iniciar o processamento de comandos do Telegram
-	tgBot.Start(context.Background())
-	defer tgBot.Stop()
+	tgBot.RegisterHandlers(ctx)
+	go tgBot.Start(ctx)
+	defer tgBot.Stop(ctx)
+
+	var mqttClient *mqtt_handler.MQTTClient
 
 	// Inicializar cliente MQTT
-	mqttClient, err := mqtt_handler.NewClient(cfg.MQTTBroker, "frigate-event-listener", cfg.MQTTUser, cfg.MQTTPassword)
-	if err != nil {
-		log.Fatalf("Erro ao inicializar cliente MQTT: %v", err)
+	if !cfg.CheckTelegram {
+		mqttClient, err = mqtt_handler.NewClient(cfg.MQTTBroker, "frigate-event-listener", cfg.MQTTUser, cfg.MQTTPassword)
+		if err != nil {
+			log.Fatalf("Erro ao inicializar cliente MQTT: %v", err)
+		}
 	}
 
 	// Criar o handler da aplicação
 	appHandler := newAppHandler(tgBot, cfg, redis)
-
-	// Inscrever no tópico de eventos do Frigate usando o método do handler
-	if err := mqttClient.Subscribe(cfg.MQTTTopic, 1, appHandler.handleMQTTMessage); err != nil {
-		log.Fatalf("Erro ao inscrever no tópico MQTT: %v", err)
+	if !cfg.CheckTelegram {
+		// Inscrever Sno tópico de eventos do Frigate usando o método do handler
+		if err := mqttClient.Subscribe(cfg.MQTTTopic, 1, appHandler.handleMQTTMessage); err != nil {
+			log.Fatalf("Erro ao inscrever no tópico MQTT: %v", err)
+		}
 	}
 
 	// Enviar mensagem de inicialização para o Telegram
 	startupMessage := "✅ Bot Frigate Events Telegram inicializado com sucesso! Aguardando eventos..."
+	if cfg.CheckTelegram {
+		startupMessage = "🔴 Operação de bug sem integração com cameras."
+	}
 	if err := tgBot.SendMessage(context.Background(), startupMessage, "General"); err != nil {
 		log.Printf("Aviso: Falha ao enviar mensagem de inicialização para o Telegram: %v", err)
 	}
@@ -314,5 +323,7 @@ func main() {
 	<-quit
 
 	fmt.Println("Finalizando...")
-	mqttClient.Disconnect()
+	if !cfg.CheckTelegram {
+		mqttClient.Disconnect()
+	}
 }

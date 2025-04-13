@@ -31,6 +31,7 @@ type Config struct {
 	RedisDB        int     `mapstructure:"redis_db"`
 	TimezoneAjust  int     `mapstructure:"timezone_ajust"`
 	Groups         []Group `mapstructure:"-"`
+	CheckTelegram  bool    `mapstructure:"check_telegram"`
 }
 
 // LoadConfig carrega as configurações de um arquivo config.yaml.
@@ -64,6 +65,7 @@ func LoadConfig() (*Config, error) {
 	v.SetDefault("redis_db", 0)
 	v.SetDefault("use_thread_ids", false)
 	v.SetDefault("timezone_ajust", 0)
+	v.SetDefault("check_telegram", false)
 
 	// Deserializar a configuração lida para a struct Config
 	var cfg Config

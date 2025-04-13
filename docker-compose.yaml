@@ -1,6 +1,11 @@
 services:
-  frigate-telegram:
-    image: geffws/frigate-events-telegram:v2.0.3
-    restart: always
-    volumes:
-      - ./config.yaml:/app/config.yaml
+  # frigate-telegram:
+    # image: geffws/frigate-events-telegram:v2.0.3
+    # restart: always
+    # volumes:
+    #   - ./config.yaml:/app/config.yaml
+  redis:
+    image: redis
+    command: redis-server
+    ports:
+      - "6379:6379"    

@@ -5,6 +5,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"runtime"
+	"strings"
+	"time"
 
 	"github.com/geffersonFerraz/frigate-events-telegram/config"
 	tgbotapi "github.com/go-telegram/bot"
@@ -15,82 +18,70 @@ import (
 
 // TelegramBot encapsula a funcionalidade do bot do Telegram
 type TelegramBot struct {
-	bot            *tgbotapi.Bot
-	chatIDs        []config.Group // Mapeia nomes de câmeras para IDs de chat
-	commandHandler *CommandHandler
-	defaultChatID  int64
-}
-
-// TelegramConfig contém as configurações para o bot do Telegram
-type TelegramConfig struct {
+	Bot           *tgbotapi.Bot
 	Token         string
 	DefaultChatID int64
 	Groups        []config.Group
 	UseThreadIDs  bool
+	StartTime     time.Time
+}
+
+type Telegram interface {
+	Start(ctx context.Context)
+	RegisterHandlers(ctx context.Context)
+	Stop(ctx context.Context) (bool, error)
+	SendMessage(ctx context.Context, text string, cameraName string) error
+	SendPhoto(ctx context.Context, photoBytes []byte, caption string, cameraName string) error
+	SendVideo(ctx context.Context, videoBytes []byte, caption string, cameraName string) error
 }
 
 // NewBot cria uma nova instância do TelegramBot
-func NewBot(config TelegramConfig) (*TelegramBot, error) {
+func NewBot(config TelegramBot) (Telegram, error) {
 	bot, err := tgbotapi.New(config.Token)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao criar bot: %w", err)
 	}
 
-	tb := &TelegramBot{
-		bot:           bot,
-		chatIDs:       config.Groups,
-		defaultChatID: config.DefaultChatID,
+	cameraThreadIDs := make(map[string]int64)
+	for _, group := range config.Groups {
+		cameraThreadIDs[group.Name] = group.ID
 	}
 
-	// Inicializar o gerenciador de comandos
-	cmdHandler := NewCommandHandler(CommandConfig{
-		Bot:          bot,
-		ChatIDs:      config.Groups,
-		UseThreadIDs: config.UseThreadIDs,
-	})
-	tb.commandHandler = cmdHandler
+	tb := &TelegramBot{
+		Token:         config.Token,
+		DefaultChatID: config.DefaultChatID,
+		Groups:        config.Groups,
+		UseThreadIDs:  config.UseThreadIDs,
+		StartTime:     time.Now(),
+		Bot:           bot,
+	}
 
 	return tb, nil
 }
 
-// Start inicia o bot do Telegram
 func (b *TelegramBot) Start(ctx context.Context) {
-	// Iniciar o gerenciador de comandos
-	b.commandHandler.Start(ctx)
+	b.Bot.Start(ctx)
 }
 
-// Stop para o bot do Telegram
-func (b *TelegramBot) Stop() {
-	// Parar o gerenciador de comandos
-	b.commandHandler.Stop()
+func (b *TelegramBot) Stop(ctx context.Context) (bool, error) {
+	return b.Bot.Close(ctx)
 }
 
-// EnableThreadIDs ativa ou desativa o uso de messageThreadID
-func (b *TelegramBot) EnableThreadIDs(enabled bool) {
-	b.commandHandler.EnableThreadIDs(enabled)
-}
-
-// ProcessUpdate processa uma atualização do Telegram
-func (b *TelegramBot) ProcessUpdate(ctx context.Context, update *models.Update) {
-	// Processar comandos
-	b.commandHandler.ProcessUpdate(ctx, update)
-}
-
-// RegisterCameraThreadID associa um messageThreadID a uma câmera
-func (b *TelegramBot) RegisterCameraThreadID(threadID int64, cameraName string) {
-	b.commandHandler.RegisterCameraThreadID(threadID, cameraName)
+// RegisterHandler registra um handler para o bot
+func (b *TelegramBot) RegisterHandlers(ctx context.Context) {
+	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/", tgbotapi.MatchTypePrefix, b.handleStatus)
 }
 
 // SendMessage envia uma mensagem de texto para o chat especificado
 func (b *TelegramBot) SendMessage(ctx context.Context, text string, cameraName string) error {
 	message := &tgbotapi.SendMessageParams{
-		ChatID: b.defaultChatID,
+		ChatID: b.DefaultChatID,
 		Text:   text,
 	}
-	if b.commandHandler.useThreadIDs {
+	if b.UseThreadIDs {
 		message.MessageThreadID = int(b.getChatID(cameraName))
 	}
-	_, err := b.bot.SendMessage(ctx, message)
+	_, err := b.Bot.SendMessage(ctx, message)
 	if err != nil {
 		return fmt.Errorf("erro ao enviar mensagem: %w", err)
 	}
@@ -109,14 +100,14 @@ func (b *TelegramBot) SendPhoto(ctx context.Context, photoBytes []byte, caption 
 	}
 
 	message := &tgbotapi.SendMediaGroupParams{
-		ChatID: b.defaultChatID,
+		ChatID: b.DefaultChatID,
 		Media:  medias,
 	}
-	if b.commandHandler.useThreadIDs {
+	if b.UseThreadIDs {
 		message.MessageThreadID = int(b.getChatID(cameraName))
 	}
 
-	_, err := b.bot.SendMediaGroup(ctx, message)
+	_, err := b.Bot.SendMediaGroup(ctx, message)
 	if err != nil {
 		return fmt.Errorf("erro ao enviar foto: %w", err)
 	}
@@ -136,14 +127,14 @@ func (b *TelegramBot) SendVideo(ctx context.Context, videoBytes []byte, caption 
 	}
 
 	message := &tgbotapi.SendMediaGroupParams{
-		ChatID: b.defaultChatID,
+		ChatID: b.DefaultChatID,
 		Media:  medias,
 	}
-	if b.commandHandler.useThreadIDs {
+	if b.UseThreadIDs {
 		message.MessageThreadID = int(b.getChatID(cameraName))
 	}
 
-	_, err := b.bot.SendMediaGroup(ctx, message)
+	_, err := b.Bot.SendMediaGroup(ctx, message)
 	if err != nil {
 		return fmt.Errorf("erro ao enviar vídeo: %w", err)
 	}
@@ -153,25 +144,92 @@ func (b *TelegramBot) SendVideo(ctx context.Context, videoBytes []byte, caption 
 
 // getChatID retorna o ID do chat para uma câmera específica
 func (b *TelegramBot) getChatID(cameraName string) int64 {
-	for _, group := range b.chatIDs {
+	for _, group := range b.Groups {
 		if group.Name == cameraName {
 			return group.ID
 		}
 	}
 	// Se não encontrar um grupo específico para a câmera, usar o grupo padrão
 	log.Printf("Aviso: Grupo não encontrado para câmera '%s', usando grupo padrão", cameraName)
-	return b.defaultChatID
+	return b.DefaultChatID
 }
 
-// SetupWebhook configura um webhook para receber atualizações do Telegram
-func (b *TelegramBot) SetupWebhook(ctx context.Context, webhookURL string, port int) error {
-	// Configurar o webhook
-	_, err := b.bot.SetWebhook(ctx, &tgbotapi.SetWebhookParams{
-		URL: webhookURL,
-	})
-	if err != nil {
-		return fmt.Errorf("erro ao configurar webhook: %w", err)
+func (b *TelegramBot) getCameraName(chatID int64) string {
+	for _, group := range b.Groups {
+		if group.ID == chatID {
+			return group.Name
+		}
 	}
-	log.Printf("Webhook configurado para %s", webhookURL)
-	return nil
+	return ""
+}
+
+func (b *TelegramBot) handleStatus(ctx context.Context, bot *tgbotapi.Bot, update *models.Update) {
+	// Obter estatísticas de memória
+	memoryUsage := runtime.MemStats{}
+	runtime.ReadMemStats(&memoryUsage)
+
+	// Formatar uso de memória em MB
+	memoryMB := float64(memoryUsage.TotalAlloc) / (1024 * 1024)
+
+	// Obter uso de CPU
+	cpuUsage := runtime.NumCPU()
+
+	// Formatar tempo de atividade
+	uptime := time.Since(b.StartTime)
+	uptimeStr := formatDuration(uptime)
+
+	statusInfo := []string{
+		"✅ Sistema em execução",
+		fmt.Sprintf("🕒 Tempo de atividade: %s", uptimeStr),
+		fmt.Sprintf("💻 Uso de memória: %.2f MB", memoryMB),
+		fmt.Sprintf("💻 Núcleos de CPU disponíveis: %d", cpuUsage),
+	}
+
+	cameraName := b.getCameraName(update.Message.Chat.ID)
+
+	if cameraName != "" {
+		statusInfo = append(statusInfo, fmt.Sprintf("📷 Câmera selecionada: %s", cameraName))
+	}
+
+	message := &tgbotapi.SendMessageParams{
+		ChatID: update.Message.Chat.ID,
+		Text:   strings.Join(statusInfo, "\n"),
+	}
+	if update.Message.MessageThreadID != 0 {
+		message.MessageThreadID = int(update.Message.MessageThreadID)
+	}
+	bot.SendMessage(ctx, message)
+}
+
+// formatDuration formata uma duração em um formato mais legível
+func formatDuration(d time.Duration) string {
+	days := int(d.Hours() / 24)
+	hours := int(d.Hours()) % 24
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+
+	if days > 0 {
+		return fmt.Sprintf("%d dias, %d horas, %d minutos", days, hours, minutes)
+	} else if hours > 0 {
+		return fmt.Sprintf("%d horas, %d minutos, %d segundos", hours, minutes, seconds)
+	} else if minutes > 0 {
+		return fmt.Sprintf("%d minutos, %d segundos", minutes, seconds)
+	}
+	return fmt.Sprintf("%d segundos", seconds)
+}
+
+func (b *TelegramBot) handleRestart(ctx context.Context, bot *tgbotapi.Bot, update *models.Update) {
+	bot.SendMessage(ctx, stringToMessage("Reiniciando o bot...", update.Message.Chat.ID, &update.Message.MessageThreadID))
+
+}
+
+func stringToMessage(text string, chatID int64, messageThreadID *int) *tgbotapi.SendMessageParams {
+	message := &tgbotapi.SendMessageParams{
+		ChatID: chatID,
+		Text:   text,
+	}
+	if messageThreadID != nil {
+		message.MessageThreadID = int(*messageThreadID)
+	}
+	return message
 }
