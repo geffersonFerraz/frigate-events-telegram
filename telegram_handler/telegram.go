@@ -7,10 +7,12 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/geffersonFerraz/frigate-events-telegram/config"
+	"github.com/geffersonFerraz/frigate-events-telegram/frigate"
 	"github.com/geffersonFerraz/frigate-events-telegram/redis_handler"
 	tgbotapi "github.com/go-telegram/bot"
 	"github.com/google/uuid"
@@ -27,6 +29,7 @@ type TelegramBot struct {
 	UseThreadIDs  bool
 	StartTime     time.Time
 	Redis         *redis_handler.RedisHandler
+	Frigate       *frigate.Frigate
 }
 
 type Telegram interface {
@@ -58,6 +61,7 @@ func NewBot(config TelegramBot) (Telegram, error) {
 		StartTime:     time.Now(),
 		Bot:           bot,
 		Redis:         config.Redis,
+		Frigate:       config.Frigate,
 	}
 
 	return tb, nil
@@ -77,6 +81,8 @@ func (b *TelegramBot) RegisterHandlers(ctx context.Context) {
 	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/clean", tgbotapi.MatchTypePrefix, b.handleClean)
 	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/restart", tgbotapi.MatchTypePrefix, b.handleRestart)
 	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/help", tgbotapi.MatchTypePrefix, b.handleHelp)
+	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/snapshot", tgbotapi.MatchTypePrefix, b.handleSnapshot)
+	b.Bot.RegisterHandler(tgbotapi.HandlerTypeMessageText, "/record", tgbotapi.MatchTypePrefix, b.handleRecord)
 }
 
 // SendMessage envia uma mensagem de texto para o chat especificado
@@ -239,10 +245,11 @@ func (b *TelegramBot) handleRestart(ctx context.Context, bot *tgbotapi.Bot, upda
 func (b *TelegramBot) handleHelp(ctx context.Context, bot *tgbotapi.Bot, update *models.Update) {
 	commands := []string{
 		"🔄 /restart - Reinicia o bot",
-		"📸 /snapshot [câmera] - Tira um snapshot da câmera especificada",
+		"📸 /snapshot - Tira um snapshot da câmera da thread atual",
 		"🧹 /clean - Limpa dados temporários",
 		"ℹ️ /status - Mostra o status do sistema",
 		"❓ /help - Mostra esta mensagem de ajuda",
+		"🎥 /record [segundos]- Cria um evento de gravação da câmera da thread atual",
 	}
 
 	bot.SendMessage(ctx, stringToMessage(strings.Join(commands, "\n"), update.Message.Chat.ID, &update.Message.MessageThreadID))
@@ -257,4 +264,45 @@ func stringToMessage(text string, chatID int64, messageThreadID *int) *tgbotapi.
 		message.MessageThreadID = int(*messageThreadID)
 	}
 	return message
+}
+
+func (b *TelegramBot) handleSnapshot(ctx context.Context, bot *tgbotapi.Bot, update *models.Update) {
+	cameraName := b.getCameraName(int64(update.Message.MessageThreadID))
+	if cameraName == "" {
+		bot.SendMessage(ctx, stringToMessage("Nenhuma câmera selecionada", update.Message.Chat.ID, &update.Message.MessageThreadID))
+		return
+	}
+
+	snapshot, err := b.Frigate.GetSnapshot(ctx, cameraName)
+	if err != nil {
+		bot.SendMessage(ctx, stringToMessage(fmt.Sprintf("Erro ao obter snapshot: %v", err), update.Message.Chat.ID, &update.Message.MessageThreadID))
+		return
+	}
+
+	b.SendPhoto(ctx, snapshot, fmt.Sprintf("Snapshot da câmera %s", cameraName), cameraName)
+}
+
+func (b *TelegramBot) handleRecord(ctx context.Context, bot *tgbotapi.Bot, update *models.Update) {
+	cameraName := b.getCameraName(int64(update.Message.MessageThreadID))
+	if cameraName == "" {
+		bot.SendMessage(ctx, stringToMessage("Nenhuma câmera selecionada", update.Message.Chat.ID, &update.Message.MessageThreadID))
+		return
+	}
+
+	duration := 10
+	var err error
+	if update.Message.Text != "/record" {
+		duration, err = strconv.Atoi(strings.Split(update.Message.Text, " ")[1])
+		if err != nil {
+			bot.SendMessage(ctx, stringToMessage(fmt.Sprintf("Erro ao converter tempo: %v", err), update.Message.Chat.ID, &update.Message.MessageThreadID))
+			return
+		}
+	}
+
+	_, err = b.Frigate.CreateEvent(ctx, cameraName, duration)
+	if err != nil {
+		bot.SendMessage(ctx, stringToMessage(fmt.Sprintf("Erro ao criar evento: %v", err), update.Message.Chat.ID, &update.Message.MessageThreadID))
+		return
+	}
+	bot.SendMessage(ctx, stringToMessage(fmt.Sprintf("Evento criado com sucesso, aguarde a gravação ser processada"), update.Message.Chat.ID, &update.Message.MessageThreadID))
 }

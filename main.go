@@ -17,6 +17,7 @@ import (
 	// Removido tgbot de propósito pois não é usado diretamente em main agora
 
 	"github.com/geffersonFerraz/frigate-events-telegram/config" // Import relativo ao módulo go
+	"github.com/geffersonFerraz/frigate-events-telegram/frigate"
 	"github.com/geffersonFerraz/frigate-events-telegram/mqtt_handler"
 	"github.com/geffersonFerraz/frigate-events-telegram/redis_handler"
 	"github.com/geffersonFerraz/frigate-events-telegram/telegram_handler"
@@ -271,6 +272,9 @@ func main() {
 	}
 	defer redis.Close()
 
+	// Inicializar Frigate
+	frigate := frigate.NewFrigate(cfg.FrigateURL)
+
 	// Inicializar bot do Telegram
 	tgBot, err := telegram_handler.NewBot(telegram_handler.TelegramBot{
 		Token:         cfg.TelegramToken,
@@ -278,6 +282,7 @@ func main() {
 		Groups:        cfg.Groups,
 		UseThreadIDs:  cfg.UseThreadIDs,
 		Redis:         redis,
+		Frigate:       frigate,
 	})
 	if err != nil {
 		log.Fatalf("Erro ao inicializar bot do Telegram: %v", err)
