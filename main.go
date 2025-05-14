@@ -164,6 +164,7 @@ func (h *AppHandler) processVideoEvent(ctx context.Context, event FrigateEvent, 
 }
 
 func formatStringID(id string) string {
+	id = strings.ReplaceAll(id, "-", "")
 	result := strings.Split(id, ".")
 	if len(result) > 1 {
 		return result[1]
