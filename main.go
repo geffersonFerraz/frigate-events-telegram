@@ -133,10 +133,11 @@ func (h *AppHandler) processVideoEvent(ctx context.Context, event FrigateEvent, 
 		}
 
 		// Criar legenda para o vídeo
-		caption := fmt.Sprintf("🎯 %s\n📷 %s\n🕒 %s",
+		caption := fmt.Sprintf("🎬 #%s\n🎥 %s\n🕒 %s\n🔗 %s",
 			event.After.Label,
 			event.After.Camera,
-			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"))
+			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"),
+			event.After.ID)
 
 		log.Printf("Tentando enviar clipe do evento %s (%d bytes) para o Telegram...", event.After.ID, len(videoBytes))
 
@@ -219,10 +220,11 @@ func (h *AppHandler) handleMQTTMessage(client mqtt.Client, msg mqtt.Message) {
 		}
 
 		// Criar legenda para a foto
-		caption := fmt.Sprintf("🎯 %s\n📷 %s\n🕒 %s",
+		caption := fmt.Sprintf("🖼️ #%s\n🎥 %s\n🕒 %s\n🔗 %s",
 			event.After.Label,
 			event.After.Camera,
-			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"))
+			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"),
+			event.After.ID)
 
 		// Enviar foto pelo Telegram
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
