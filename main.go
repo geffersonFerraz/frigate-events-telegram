@@ -133,7 +133,7 @@ func (h *AppHandler) processVideoEvent(ctx context.Context, event FrigateEvent, 
 		}
 
 		// Criar legenda para o vídeo
-		caption := fmt.Sprintf("🎬 #%s\n🎥 %s\n🕒 %s\n🔗 %s",
+		caption := fmt.Sprintf("🎬 #%s\n🎥 %s\n🕒 %s\n🔗 #%s",
 			event.After.Label,
 			event.After.Camera,
 			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"),
