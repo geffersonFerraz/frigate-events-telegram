@@ -104,7 +104,7 @@ func (b *TelegramBot) SendMessage(ctx context.Context, text string, cameraName s
 // SendPhoto envia uma foto para o chat especificado
 func (b *TelegramBot) SendPhoto(ctx context.Context, photoBytes []byte, caption string, cameraName string) error {
 	photo := &models.InputMediaPhoto{
-		Media:           "attach://" + uuid.New().String(),
+		Media:           "attach://" + uuid.New().String() + ".jpg",
 		MediaAttachment: bytes.NewReader(photoBytes),
 		Caption:         caption,
 	}
@@ -130,7 +130,7 @@ func (b *TelegramBot) SendPhoto(ctx context.Context, photoBytes []byte, caption 
 // SendVideo envia um vídeo para o chat especificado
 func (b *TelegramBot) SendVideo(ctx context.Context, videoBytes []byte, caption string, cameraName string) error {
 	video := &models.InputMediaVideo{
-		Media:           "attach://" + uuid.New().String(),
+		Media:           "attach://" + uuid.New().String() + ".mp4",
 		MediaAttachment: bytes.NewReader(videoBytes),
 		Caption:         caption,
 	}
