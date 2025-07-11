@@ -1,41 +1,41 @@
-# Estágio de build
+# Build stage
 FROM golang:1.24.2-alpine AS builder
 
 WORKDIR /app
 
-# Copiar arquivos de dependências
+# Copy dependency files
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copiar código fonte
+# Copy source code
 COPY . .
 
-# Compilar o binário
+# Compile the binary
 RUN CGO_ENABLED=0 GOOS=linux go build -o frigate-events-telegram -ldflags="-s -w"
 
-# Estágio final
+# Final stage
 FROM ubuntu:22.04
 
 WORKDIR /app
 
-# Instalar dependências mínimas necessárias
+# Install minimal required dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar o binário compilado do estágio de build
+# Copy the compiled binary from the build stage
 COPY --from=builder /app/frigate-events-telegram .
 COPY --from=builder /app/config.yaml.example .
 
-# Criar usuário não-root
+# Create non-root user
 RUN useradd -r -u 1000 appuser && \
     chown -R appuser:appuser /app
 
-# Mudar para o usuário não-root
+# Switch to non-root user
 USER appuser
 
-# Definir variáveis de ambiente
+# Set environment variables
 ENV TZ=America/Sao_Paulo
 
-# Executar o binário
+# Run the binary
 CMD ["./frigate-events-telegram"]

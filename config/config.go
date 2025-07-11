@@ -9,14 +9,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Group representa um grupo do Telegram com seu nome e ID
+// Group represents a Telegram group with its name and ID
 type Group struct {
 	Name string
 	ID   int64
 }
 
-// Config struct para armazenar as configurações da aplicação
-// As tags 'mapstructure' agora correspondem às chaves no YAML
+// Config struct to store application configuration
+// The 'mapstructure' tags now correspond to the keys in YAML
 type Config struct {
 	MQTTBroker     string  `mapstructure:"mqtt_broker"`
 	MQTTUser       string  `mapstructure:"mqtt_user"`
@@ -34,29 +34,29 @@ type Config struct {
 	CheckTelegram  bool    `mapstructure:"check_telegram"`
 }
 
-// LoadConfig carrega as configurações de um arquivo config.yaml.
+// LoadConfig loads configuration from a config.yaml file.
 func LoadConfig() (*Config, error) {
 	v := viper.New()
 
-	// Configurar Viper para ler o arquivo config.yaml
-	v.AddConfigPath(".")      // Procurar no diretório atual
-	v.SetConfigName("config") // Nome do arquivo (sem extensão)
-	v.SetConfigType("yaml")   // Tipo do arquivo
+	// Configure Viper to read the config.yaml file
+	v.AddConfigPath(".")      // Search in current directory
+	v.SetConfigName("config") // File name (without extension)
+	v.SetConfigType("yaml")   // File type
 
-	// Tentar ler o arquivo de configuração
+	// Try to read the configuration file
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Arquivo não encontrado, retornar erro claro
-			log.Println("Erro: Arquivo de configuração 'config.yaml' não encontrado.")
-			return nil, errors.New("arquivo config.yaml não encontrado")
+			// File not found, return clear error
+			log.Println("Error: Configuration file 'config.yaml' not found.")
+			return nil, errors.New("config.yaml file not found")
 		} else {
-			// Outro erro ao ler o arquivo
-			log.Printf("Erro ao ler arquivo de configuração 'config.yaml': %v", err)
+			// Other error reading the file
+			log.Printf("Error reading configuration file 'config.yaml': %v", err)
 			return nil, err
 		}
 	}
 
-	// Definir valores padrão (ainda úteis caso a chave esteja ausente no YAML)
+	// Set default values (still useful if the key is missing in YAML)
 	v.SetDefault("mqtt_broker", "tcp://localhost:1883")
 	v.SetDefault("mqtt_topic", "frigate/events")
 	v.SetDefault("frigate_url", "http://localhost:5000")
@@ -67,45 +67,45 @@ func LoadConfig() (*Config, error) {
 	v.SetDefault("timezone_ajust", 0)
 	v.SetDefault("check_telegram", false)
 
-	// Deserializar a configuração lida para a struct Config
+	// Deserialize the read configuration to the Config struct
 	var cfg Config
 	err := v.Unmarshal(&cfg)
 	if err != nil {
-		log.Printf("Erro ao deserializar configuração: %v", err)
+		log.Printf("Error deserializing configuration: %v", err)
 		return nil, err
 	}
 
-	// Processar os grupos do Telegram
+	// Process Telegram groups
 	groups := v.GetStringSlice("groups")
 	cfg.Groups = make([]Group, 0, len(groups))
 	for _, groupStr := range groups {
 		parts := strings.Split(groupStr, "|")
 		if len(parts) != 2 {
-			log.Printf("Aviso: Formato inválido para grupo: %s", groupStr)
+			log.Printf("Warning: Invalid format for group: %s", groupStr)
 			continue
 		}
 		var group Group
 		group.Name = parts[0]
 		var id int64
 		if _, err := fmt.Sscanf(parts[1], "%d", &id); err != nil {
-			log.Printf("Aviso: ID inválido para grupo %s: %s", group.Name, parts[1])
+			log.Printf("Warning: Invalid ID for group %s: %s", group.Name, parts[1])
 			continue
 		}
 		group.ID = id
 		cfg.Groups = append(cfg.Groups, group)
 	}
 
-	// Validação mínima (importante, pois os padrões podem mascarar a ausência)
+	// Minimum validation (important, as defaults can mask absence)
 	if cfg.TelegramToken == "" {
-		log.Println("Erro: 'telegram_token' não definido no config.yaml")
-		return nil, errors.New("'telegram_token' não definido no config.yaml")
+		log.Println("Error: 'telegram_token' not defined in config.yaml")
+		return nil, errors.New("'telegram_token' not defined in config.yaml")
 	}
 	if cfg.TelegramChatID == 0 {
-		log.Println("Erro: 'telegram_chat_id' não definido no config.yaml")
-		return nil, errors.New("'telegram_chat_id' não definido no config.yaml")
+		log.Println("Error: 'telegram_chat_id' not defined in config.yaml")
+		return nil, errors.New("'telegram_chat_id' not defined in config.yaml")
 	}
-	// FrigateURL tem um padrão, então não precisa ser fatal se ausente no yaml
+	// FrigateURL has a default, so it doesn't need to be fatal if missing in yaml
 
-	log.Println("Configuração carregada de config.yaml")
+	log.Println("Configuration loaded from config.yaml")
 	return &cfg, nil
 }

@@ -14,16 +14,16 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	// Removido tgbot de propósito pois não é usado diretamente em main agora
+	// Removed tgbot import on purpose as it's not used directly in main now
 
-	"github.com/geffersonFerraz/frigate-events-telegram/config" // Import relativo ao módulo go
+	"github.com/geffersonFerraz/frigate-events-telegram/config" // Relative import for go module
 	"github.com/geffersonFerraz/frigate-events-telegram/frigate"
 	"github.com/geffersonFerraz/frigate-events-telegram/mqtt_handler"
 	"github.com/geffersonFerraz/frigate-events-telegram/redis_handler"
 	"github.com/geffersonFerraz/frigate-events-telegram/telegram_handler"
 )
 
-// FrigateEvent representa a estrutura básica de um evento do Frigate (pode precisar de mais campos)
+// FrigateEvent represents the basic structure of a Frigate event (may need more fields)
 type FrigateEvent struct {
 	Before struct {
 		ID          string  `json:"id"`
@@ -44,45 +44,45 @@ type FrigateEvent struct {
 	Type string `json:"type"` // "new", "update", "end"
 }
 
-// AppHandler contém as dependências necessárias para o handler MQTT
+// AppHandler contains the necessary dependencies for the MQTT handler
 type AppHandler struct {
 	tgBot      telegram_handler.Telegram
 	cfg        *config.Config
-	httpClient *http.Client // Para buscar a imagem
+	httpClient *http.Client // For fetching images
 	redis      *redis_handler.RedisHandler
 }
 
-// newAppHandler cria uma nova instância do AppHandler
+// newAppHandler creates a new instance of AppHandler
 func newAppHandler(bot telegram_handler.Telegram, cfg *config.Config, redis *redis_handler.RedisHandler) *AppHandler {
 	return &AppHandler{
 		tgBot:      bot,
 		cfg:        cfg,
-		httpClient: &http.Client{Timeout: 10 * time.Second}, // Timeout de 10s para buscar imagem
+		httpClient: &http.Client{Timeout: 10 * time.Second}, // 10s timeout for fetching images
 		redis:      redis,
 	}
 }
 
-// downloadVideo tenta baixar o vídeo do Frigate, com retry se necessário
+// downloadVideo attempts to download the video from Frigate, with retry if necessary
 func (h *AppHandler) downloadVideo(ctx context.Context, clipURL string, maxRetries int) ([]byte, error) {
 	var videoBytes []byte
 	var lastErr error
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if attempt > 1 {
-			log.Printf("Tentativa %d de %d de baixar o clipe %s", attempt, maxRetries, clipURL)
-			// Esperar um pouco antes de tentar novamente
+			log.Printf("Attempt %d of %d to download clip %s", attempt, maxRetries, clipURL)
+			// Wait a bit before retrying
 			time.Sleep(2 * time.Second)
 		}
 
 		req, err := http.NewRequestWithContext(ctx, "GET", clipURL, nil)
 		if err != nil {
-			lastErr = fmt.Errorf("erro ao criar request: %w", err)
+			lastErr = fmt.Errorf("error creating request: %w", err)
 			continue
 		}
 
 		resp, err := h.httpClient.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("erro ao buscar clipe: %w", err)
+			lastErr = fmt.Errorf("error fetching clip: %w", err)
 			continue
 		}
 
@@ -96,7 +96,7 @@ func (h *AppHandler) downloadVideo(ctx context.Context, clipURL string, maxRetri
 		videoBytes, err = io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			lastErr = fmt.Errorf("erro ao ler bytes do clipe: %w", err)
+			lastErr = fmt.Errorf("error reading clip bytes: %w", err)
 			continue
 		}
 
@@ -104,26 +104,26 @@ func (h *AppHandler) downloadVideo(ctx context.Context, clipURL string, maxRetri
 			return videoBytes, nil
 		}
 
-		lastErr = fmt.Errorf("clipe vazio recebido")
+		lastErr = fmt.Errorf("empty clip received")
 	}
 
-	return nil, fmt.Errorf("falha após %d tentativas: %v", maxRetries, lastErr)
+	return nil, fmt.Errorf("failed after %d attempts: %v", maxRetries, lastErr)
 }
 
-// processVideoEvent processa o download e envio do vídeo em uma goroutine separada
+// processVideoEvent processes the download and sending of the video in a separate goroutine
 func (h *AppHandler) processVideoEvent(ctx context.Context, event FrigateEvent, clipURL string) {
-	// Criar um contexto com timeout para todo o processo
+	// Create a context with timeout for the entire process
 	videoCtx, videoCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer videoCancel()
 
-	// Channel para receber o resultado do processamento
+	// Channel to receive the processing result
 	resultChan := make(chan error, 1)
 
 	go func() {
-		// Tentar baixar o vídeo (com retry)
-		videoBytes, err := h.downloadVideo(videoCtx, clipURL, 9) // 3 tentativas
+		// Try to download the video (with retry)
+		videoBytes, err := h.downloadVideo(videoCtx, clipURL, 9) // 3 attempts
 		if err != nil {
-			resultChan <- fmt.Errorf("falha ao baixar vídeo: %w", err)
+			resultChan <- fmt.Errorf("failed to download video: %w", err)
 			return
 		}
 
@@ -132,37 +132,38 @@ func (h *AppHandler) processVideoEvent(ctx context.Context, event FrigateEvent, 
 			videoBytes = videoBytes[:49*1024*1024]
 		}
 
-		// Criar legenda para o vídeo
+		// Create caption for the video
 		caption := fmt.Sprintf("🎬 #%s\n🎥 %s\n🕒 %s\n🔗 #%s",
 			event.After.Label,
 			event.After.Camera,
 			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"),
 			formatStringID(event.After.ID))
 
-		log.Printf("Tentando enviar clipe do evento %s (%d bytes) para o Telegram...", event.After.ID, len(videoBytes))
+		log.Printf("Attempting to send clip for event %s (%d bytes) to Telegram...", event.After.ID, len(videoBytes))
 
-		// Enviar vídeo pelo Telegram
+		// Send video via Telegram
 		if err := h.tgBot.SendVideo(videoCtx, videoBytes, caption, event.After.Camera); err != nil {
-			resultChan <- fmt.Errorf("erro ao enviar vídeo: %w", err)
+			resultChan <- fmt.Errorf("error sending video: %w", err)
 			return
 		}
 
 		resultChan <- nil
 	}()
 
-	// Aguardar o resultado ou timeout
+	// Wait for result or timeout
 	select {
 	case err := <-resultChan:
 		if err != nil {
-			log.Printf("Erro no processamento do vídeo para evento %s: %v", event.After.ID, err)
+			log.Printf("Error processing video for event %s: %v", event.After.ID, err)
 		} else {
-			log.Printf("Clipe do evento %s enviado para o Telegram com sucesso.", event.After.ID)
+			log.Printf("Clip for event %s sent to Telegram successfully.", event.After.ID)
 		}
 	case <-videoCtx.Done():
-		log.Printf("Timeout ao processar vídeo do evento %s: %v", event.After.ID, videoCtx.Err())
+		log.Printf("Timeout processing video for event %s: %v", event.After.ID, videoCtx.Err())
 	}
 }
 
+// formatStringID formats the event ID by removing hyphens and extracting the part after the dot
 func formatStringID(id string) string {
 	id = strings.ReplaceAll(id, "-", "")
 	result := strings.Split(id, ".")
@@ -172,121 +173,121 @@ func formatStringID(id string) string {
 	return id
 }
 
-// handleMQTTMessage é o método que processa as mensagens MQTT
+// handleMQTTMessage is the method that processes MQTT messages
 func (h *AppHandler) handleMQTTMessage(client mqtt.Client, msg mqtt.Message) {
-	fmt.Printf("Recebido: %s do tópico: %s\n", msg.Payload(), msg.Topic())
+	fmt.Printf("Received: %s from topic: %s\n", msg.Payload(), msg.Topic())
 
 	var event FrigateEvent
 	if err := json.Unmarshal(msg.Payload(), &event); err != nil {
-		log.Printf("Erro ao decodificar JSON do evento: %v", err)
+		log.Printf("Error decoding JSON from event: %v", err)
 		return
 	}
 
-	// Verificar se o evento já foi processado
+	// Check if the event has already been processed
 	ctx := context.Background()
 	processed, err := h.redis.IsEventProcessed(ctx, event.After.ID, event.Type)
 	if err != nil {
-		log.Printf("Erro ao verificar evento no Redis: %v", err)
+		log.Printf("Error checking event in Redis: %v", err)
 		return
 	}
 	if processed {
-		log.Printf("Evento %s (tipo: %s) já foi processado anteriormente, ignorando.", event.After.ID, event.Type)
+		log.Printf("Event %s (type: %s) has already been processed previously, ignoring.", event.After.ID, event.Type)
 		return
 	}
 
-	// Queremos enviar apenas para eventos novos ou atualizados que tenham snapshot
+	// We want to send only for new or updated events that have snapshots
 	if (event.Type == "new" || event.Type == "update") && event.After.HasSnapshot {
-		log.Printf("Processando evento '%s' para camera '%s' (ID: %s)", event.After.Label, event.After.Camera, event.After.ID)
+		log.Printf("Processing event '%s' for camera '%s' (ID: %s)", event.After.Label, event.After.Camera, event.After.ID)
 
-		// Construir URL do snapshot
+		// Build snapshot URL
 		snapshotURL := fmt.Sprintf("%s/api/events/%s/snapshot.jpg", strings.TrimSuffix(h.cfg.FrigateURL, "/"), event.After.ID)
 
-		// Baixar a imagem
+		// Download the image
 		req, err := http.NewRequestWithContext(context.Background(), "GET", snapshotURL, nil)
 		if err != nil {
-			log.Printf("Erro ao criar request para snapshot %s: %v", snapshotURL, err)
+			log.Printf("Error creating request for snapshot %s: %v", snapshotURL, err)
 			return
 		}
 
 		resp, err := h.httpClient.Do(req)
 		if err != nil {
-			log.Printf("Erro ao buscar snapshot %s: %v", snapshotURL, err)
+			log.Printf("Error fetching snapshot %s: %v", snapshotURL, err)
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			log.Printf("Erro ao buscar snapshot %s: Status %d", snapshotURL, resp.StatusCode)
+			log.Printf("Error fetching snapshot %s: Status %d", snapshotURL, resp.StatusCode)
 			bodyBytes, _ := io.ReadAll(resp.Body)
-			log.Printf("Corpo da resposta: %s", string(bodyBytes))
+			log.Printf("Response body: %s", string(bodyBytes))
 			return
 		}
 
 		imgBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Printf("Erro ao ler bytes do snapshot %s: %v", snapshotURL, err)
+			log.Printf("Error reading bytes from snapshot %s: %v", snapshotURL, err)
 			return
 		}
 
-		// Criar legenda para a foto
+		// Create caption for the photo
 		caption := fmt.Sprintf("🖼️ #%s\n🎥 %s\n🕒 %s\n🔗 #%s",
 			event.After.Label,
 			event.After.Camera,
 			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"),
 			formatStringID(event.After.ID))
 
-		// Enviar foto pelo Telegram
+		// Send photo via Telegram
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := h.tgBot.SendPhoto(ctx, imgBytes, caption, event.After.Camera); err != nil {
-			log.Printf("Erro ao enviar foto para o Telegram: %v", err)
+			log.Printf("Error sending photo to Telegram: %v", err)
 		}
-		log.Printf("Foto do evento %s enviada para o Telegram.", event.After.ID)
+		log.Printf("Photo for event %s sent to Telegram.", event.After.ID)
 
-		// Marcar evento como processado após enviar a foto
+		// Mark event as processed after sending the photo
 		if err := h.redis.MarkEventAsProcessed(ctx, event.After.ID, event.Type); err != nil {
-			log.Printf("Erro ao marcar evento como processado no Redis: %v", err)
+			log.Printf("Error marking event as processed in Redis: %v", err)
 		}
 
 	} else if event.Type == "end" && event.After.HasClip {
-		log.Printf("Processando fim de evento '%s' para camera '%s' (ID: %s) - Enviando clipe.", event.After.Label, event.After.Camera, event.After.ID)
+		log.Printf("Processing end of event '%s' for camera '%s' (ID: %s) - Sending clip.", event.After.Label, event.After.Camera, event.After.ID)
 
-		// Construir URL do clipe
+		// Build clip URL
 		clipURL := fmt.Sprintf("%s/api/events/%s/clip.mp4", strings.TrimSuffix(h.cfg.FrigateURL, "/"), event.After.ID)
 
-		// Processar o vídeo em uma goroutine separada
+		// Process the video in a separate goroutine
 		go h.processVideoEvent(context.Background(), event, clipURL)
 
-		// Marcar evento como processado após iniciar o processamento do vídeo
+		// Mark event as processed after starting video processing
 		if err := h.redis.MarkEventAsProcessed(ctx, event.After.ID, event.Type); err != nil {
-			log.Printf("Erro ao marcar evento como processado no Redis: %v", err)
+			log.Printf("Error marking event as processed in Redis: %v", err)
 		}
 
 	} else {
-		// log.Printf("Evento ignorado (Tipo: %s, Snapshot: %t, Clip: %t)", event.Type, event.After.HasSnapshot, event.After.HasClip)
+		// log.Printf("Event ignored (Type: %s, Snapshot: %t, Clip: %t)", event.Type, event.After.HasSnapshot, event.After.HasClip)
 	}
 }
 
 func main() {
-	fmt.Println("Iniciando Frigate Events Telegram...")
+	fmt.Println("Starting Frigate Events Telegram...")
 
-	// Carregar configuração
+	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Erro ao carregar configuração: %v", err)
+		log.Fatalf("Error loading configuration: %v", err)
 	}
 
-	// Inicializar Redis
+	// Initialize Redis
 	redis, err := redis_handler.NewRedisHandler(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
 	if err != nil {
-		log.Fatalf("Erro ao inicializar Redis: %v", err)
+		log.Fatalf("Error initializing Redis: %v", err)
 	}
 	defer redis.Close()
 
-	// Inicializar Frigate
+	// Initialize Frigate
 	frigate := frigate.NewFrigate(cfg.FrigateURL)
 
-	// Inicializar bot do Telegram
+	// Initialize Telegram bot
 	tgBot, err := telegram_handler.NewBot(telegram_handler.TelegramBot{
 		Token:         cfg.TelegramToken,
 		DefaultChatID: cfg.TelegramChatID,
@@ -296,50 +297,50 @@ func main() {
 		Frigate:       frigate,
 	})
 	if err != nil {
-		log.Fatalf("Erro ao inicializar bot do Telegram: %v", err)
+		log.Fatalf("Error initializing Telegram bot: %v", err)
 	}
 	ctx := context.Background()
-	// Iniciar o processamento de comandos do Telegram
+	// Start Telegram command processing
 	tgBot.RegisterHandlers(ctx)
 	go tgBot.Start(ctx)
 	defer tgBot.Stop(ctx)
 
 	var mqttClient *mqtt_handler.MQTTClient
 
-	// Inicializar cliente MQTT
+	// Initialize MQTT client
 	if !cfg.CheckTelegram {
 		mqttClient, err = mqtt_handler.NewClient(cfg.MQTTBroker, "frigate-event-listener", cfg.MQTTUser, cfg.MQTTPassword)
 		if err != nil {
-			log.Fatalf("Erro ao inicializar cliente MQTT: %v", err)
+			log.Fatalf("Error initializing MQTT client: %v", err)
 		}
 	}
 
-	// Criar o handler da aplicação
+	// Create the application handler
 	appHandler := newAppHandler(tgBot, cfg, redis)
 	if !cfg.CheckTelegram {
-		// Inscrever Sno tópico de eventos do Frigate usando o método do handler
+		// Subscribe to Frigate events topic using the handler method
 		if err := mqttClient.Subscribe(cfg.MQTTTopic, 1, appHandler.handleMQTTMessage); err != nil {
-			log.Fatalf("Erro ao inscrever no tópico MQTT: %v", err)
+			log.Fatalf("Error subscribing to MQTT topic: %v", err)
 		}
 	}
 
-	// Enviar mensagem de inicialização para o Telegram
-	startupMessage := "✅ Bot Frigate Events Telegram inicializado com sucesso! Aguardando eventos..."
+	// Send startup message to Telegram
+	startupMessage := "✅ Frigate Events Telegram bot initialized successfully! Waiting for events..."
 	if cfg.CheckTelegram {
-		startupMessage = "🔴 Operação de bug sem integração com cameras."
+		startupMessage = "🔴 Debug operation without camera integration."
 	}
 	if err := tgBot.SendMessage(context.Background(), startupMessage, "General"); err != nil {
-		log.Printf("Aviso: Falha ao enviar mensagem de inicialização para o Telegram: %v", err)
+		log.Printf("Warning: Failed to send startup message to Telegram: %v", err)
 	}
 
-	fmt.Println("Aplicação pronta. Aguardando eventos MQTT...")
+	fmt.Println("Application ready. Waiting for MQTT events...")
 
-	// Esperar por sinal de interrupção para finalizar
+	// Wait for interrupt signal to finish
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	fmt.Println("Finalizando...")
+	fmt.Println("Shutting down...")
 	if !cfg.CheckTelegram {
 		mqttClient.Disconnect()
 	}
