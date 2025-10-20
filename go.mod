@@ -1,10 +1,10 @@
 module github.com/geffersonFerraz/frigate-events-telegram
 
-go 1.24.2
+go 1.25.2
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.0
-	github.com/go-telegram/bot v1.14.1
+	github.com/go-telegram/bot v1.17.0
 	github.com/google/uuid v1.6.0
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/spf13/viper v1.20.1
