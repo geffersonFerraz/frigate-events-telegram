@@ -236,8 +236,8 @@ func (h *AppHandler) handleMQTTMessage(client mqtt.Client, msg mqtt.Message) {
 			time.Unix(int64(event.After.StartTime), 0).Add(time.Duration(h.cfg.TimezoneAjust)*time.Hour).Format("02/01/2006 15:04:05"),
 			formatStringID(event.After.ID))
 
-		// Send photo via Telegram
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Send photo via Telegram with extended timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		if err := h.tgBot.SendPhoto(ctx, imgBytes, caption, event.After.Camera); err != nil {
 			log.Printf("Error sending photo to Telegram: %v", err)
@@ -324,12 +324,14 @@ func main() {
 		}
 	}
 
-	// Send startup message to Telegram
+	// Send startup message to Telegram with timeout
 	startupMessage := "✅ Frigate Events Telegram bot initialized successfully! Waiting for events..."
 	if cfg.CheckTelegram {
 		startupMessage = "🔴 Debug operation without camera integration."
 	}
-	if err := tgBot.SendMessage(context.Background(), startupMessage, "General"); err != nil {
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer startupCancel()
+	if err := tgBot.SendMessage(startupCtx, startupMessage, "General"); err != nil {
 		log.Printf("Warning: Failed to send startup message to Telegram: %v", err)
 	}
 

@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
+	"net"
 	"os"
 	"runtime"
 	"strconv"
@@ -19,6 +21,84 @@ import (
 
 	"github.com/go-telegram/bot/models"
 )
+
+// retryWithBackoff executes a function with exponential backoff retry
+func retryWithBackoff(ctx context.Context, maxRetries int, baseDelay time.Duration, fn func() error) error {
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Calculate delay with exponential backoff
+			delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(attempt-1)))
+			if delay > 30*time.Second {
+				delay = 30 * time.Second // Cap at 30 seconds
+			}
+
+			log.Printf("Retrying in %v (attempt %d/%d)", delay, attempt+1, maxRetries)
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		err := fn()
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+
+		// Check if it's a network error that might be temporary
+		if isTemporaryError(err) {
+			log.Printf("Temporary error on attempt %d: %v", attempt+1, err)
+			continue
+		}
+
+		// If it's not a temporary error, don't retry
+		return err
+	}
+
+	return fmt.Errorf("failed after %d attempts, last error: %w", maxRetries, lastErr)
+}
+
+// isTemporaryError checks if an error is likely temporary and worth retrying
+func isTemporaryError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for network errors
+	if netErr, ok := err.(net.Error); ok {
+		return netErr.Temporary() || netErr.Timeout()
+	}
+
+	// Check for context timeout/cancellation
+	if err == context.DeadlineExceeded || err == context.Canceled {
+		return false
+	}
+
+	// Check for specific error messages that indicate temporary issues
+	errStr := strings.ToLower(err.Error())
+	temporaryPatterns := []string{
+		"timeout",
+		"connection refused",
+		"connection reset",
+		"no route to host",
+		"temporary failure",
+		"deadline exceeded",
+		"context deadline exceeded",
+	}
+
+	for _, pattern := range temporaryPatterns {
+		if strings.Contains(errStr, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
 
 // TelegramBot encapsulates the Telegram bot functionality
 type TelegramBot struct {
@@ -44,6 +124,7 @@ type Telegram interface {
 
 // NewBot creates a new instance of TelegramBot
 func NewBot(config TelegramBot) (Telegram, error) {
+	// Create bot with basic configuration
 	bot, err := tgbotapi.New(config.Token)
 	if err != nil {
 		return nil, fmt.Errorf("error creating bot: %w", err)
@@ -97,11 +178,15 @@ func (b *TelegramBot) SendMessage(ctx context.Context, text string, cameraName s
 	if b.UseThreadIDs {
 		message.MessageThreadID = int(b.getChatID(cameraName))
 	}
-	_, err := b.Bot.SendMessage(ctx, message)
-	if err != nil {
-		return fmt.Errorf("error sending message: %w", err)
-	}
-	return nil
+
+	// Use retry mechanism for sending messages
+	return retryWithBackoff(ctx, 3, 2*time.Second, func() error {
+		_, err := b.Bot.SendMessage(ctx, message)
+		if err != nil {
+			return fmt.Errorf("error sending message: %w", err)
+		}
+		return nil
+	})
 }
 
 // SendPhoto sends a photo to the specified chat
@@ -123,11 +208,14 @@ func (b *TelegramBot) SendPhoto(ctx context.Context, photoBytes []byte, caption 
 		message.MessageThreadID = int(b.getChatID(cameraName))
 	}
 
-	_, err := b.Bot.SendMediaGroup(ctx, message)
-	if err != nil {
-		return fmt.Errorf("error sending photo: %w", err)
-	}
-	return nil
+	// Use retry mechanism for sending photos
+	return retryWithBackoff(ctx, 3, 2*time.Second, func() error {
+		_, err := b.Bot.SendMediaGroup(ctx, message)
+		if err != nil {
+			return fmt.Errorf("error sending photo: %w", err)
+		}
+		return nil
+	})
 }
 
 // SendVideo sends a video to the specified chat
@@ -150,12 +238,14 @@ func (b *TelegramBot) SendVideo(ctx context.Context, videoBytes []byte, caption 
 		message.MessageThreadID = int(b.getChatID(cameraName))
 	}
 
-	_, err := b.Bot.SendMediaGroup(ctx, message)
-	if err != nil {
-		return fmt.Errorf("error sending video: %w", err)
-	}
-
-	return nil
+	// Use retry mechanism for sending videos
+	return retryWithBackoff(ctx, 3, 2*time.Second, func() error {
+		_, err := b.Bot.SendMediaGroup(ctx, message)
+		if err != nil {
+			return fmt.Errorf("error sending video: %w", err)
+		}
+		return nil
+	})
 }
 
 // getChatID returns the chat ID for a specific camera
