@@ -125,9 +125,16 @@ type Telegram interface {
 // NewBot creates a new instance of TelegramBot
 func NewBot(config TelegramBot) (Telegram, error) {
 	// Create bot with basic configuration
-	bot, err := tgbotapi.New(config.Token)
+	botOptions := []tgbotapi.Option{
+		tgbotapi.WithCheckInitTimeout(10 * time.Minute),
+		tgbotapi.WithErrorsHandler(func(err error) {
+			log.Printf("Error no tgBot: %v", err)
+		}),
+		tgbotapi.WithDebug(),
+	}
+	bot, err := tgbotapi.New(config.Token, botOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("error creating bot: %w", err)
+		return nil, err
 	}
 
 	cameraThreadIDs := make(map[string]int64)
