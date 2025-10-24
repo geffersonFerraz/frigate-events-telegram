@@ -110,6 +110,7 @@ type TelegramBot struct {
 	StartTime     time.Time
 	Redis         *redis_handler.RedisHandler
 	Frigate       *frigate.Frigate
+	RestartChan   chan struct{} // Channel to signal restart
 }
 
 // Telegram interface defines the methods that a Telegram bot must implement
@@ -120,15 +121,26 @@ type Telegram interface {
 	SendMessage(ctx context.Context, text string, cameraName string) error
 	SendPhoto(ctx context.Context, photoBytes []byte, caption string, cameraName string) error
 	SendVideo(ctx context.Context, videoBytes []byte, caption string, cameraName string) error
+	GetRestartChan() <-chan struct{}
 }
 
 // NewBot creates a new instance of TelegramBot
 func NewBot(config TelegramBot) (Telegram, error) {
+	// Create restart channel
+	restartChan := make(chan struct{}, 1)
+
 	// Create bot with basic configuration
 	botOptions := []tgbotapi.Option{
 		tgbotapi.WithCheckInitTimeout(10 * time.Minute),
 		tgbotapi.WithErrorsHandler(func(err error) {
 			log.Printf("Error no tgBot: %v", err)
+			// Signal restart on critical errors
+			select {
+			case restartChan <- struct{}{}:
+				log.Printf("Restart signal sent due to error: %v", err)
+			default:
+				// Channel is full, restart already requested
+			}
 		}),
 		tgbotapi.WithDebug(),
 	}
@@ -151,6 +163,7 @@ func NewBot(config TelegramBot) (Telegram, error) {
 		Bot:           bot,
 		Redis:         config.Redis,
 		Frigate:       config.Frigate,
+		RestartChan:   restartChan,
 	}
 
 	return tb, nil
@@ -164,6 +177,16 @@ func (b *TelegramBot) Start(ctx context.Context) {
 // Stop stops the Telegram bot
 func (b *TelegramBot) Stop(ctx context.Context) (bool, error) {
 	return b.Bot.Close(ctx)
+}
+
+func (b *TelegramBot) Restart(ctx context.Context) {
+	b.Bot.Close(ctx)
+	b.Bot.Start(ctx)
+}
+
+// GetRestartChan returns the restart channel for external monitoring
+func (b *TelegramBot) GetRestartChan() <-chan struct{} {
+	return b.RestartChan
 }
 
 // RegisterHandlers registers handlers for the bot
@@ -412,5 +435,5 @@ func (b *TelegramBot) handleRecord(ctx context.Context, bot *tgbotapi.Bot, updat
 		bot.SendMessage(ctx, stringToMessage(fmt.Sprintf("Error creating event: %v", err), update.Message.Chat.ID, &update.Message.MessageThreadID))
 		return
 	}
-	bot.SendMessage(ctx, stringToMessage(fmt.Sprintf("Event created successfully, wait for the recording to be processed"), update.Message.Chat.ID, &update.Message.MessageThreadID))
+	bot.SendMessage(ctx, stringToMessage("Event created successfully, wait for the recording to be processed", update.Message.Chat.ID, &update.Message.MessageThreadID))
 }

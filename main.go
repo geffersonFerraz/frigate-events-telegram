@@ -307,6 +307,20 @@ func main() {
 	go tgBot.Start(ctx)
 	defer tgBot.Stop(ctx)
 
+	// Monitor restart channel
+	go func() {
+		restartChan := tgBot.GetRestartChan()
+		for {
+			select {
+			case <-restartChan:
+				log.Printf("Restart signal received from Telegram bot, restarting application...")
+				os.Exit(0)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	var mqttClient *mqtt_handler.MQTTClient
 
 	// Initialize MQTT client
