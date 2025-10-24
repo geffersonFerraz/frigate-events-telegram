@@ -175,7 +175,9 @@ func formatStringID(id string) string {
 
 // handleMQTTMessage is the method that processes MQTT messages
 func (h *AppHandler) handleMQTTMessage(client mqtt.Client, msg mqtt.Message) {
-	fmt.Printf("Received: %s from topic: %s\n", msg.Payload(), msg.Topic())
+	if os.Getenv("DEBUG") == "true" {
+		fmt.Printf("Received: %s from topic: %s\n", msg.Payload(), msg.Topic())
+	}
 
 	var event FrigateEvent
 	if err := json.Unmarshal(msg.Payload(), &event); err != nil {
