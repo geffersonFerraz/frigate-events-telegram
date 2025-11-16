@@ -1,11 +1,18 @@
 services:
-  # frigate-telegram:
-    # image: geffws/frigate-events-telegram:v2.0.3
-    # restart: always
-    # volumes:
-    #   - ./config.yaml:/app/config.yaml
   redis:
-    image: redis
-    command: redis-server
+    image: redis:latest
     ports:
-      - "6379:6379"    
+      - "6379:6379"
+    networks:
+      - frigate-events-network
+  rabbitmq:
+    image: rabbitmq:management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - frigate-events-network
+
+networks:
+  frigate-events-network:
+    driver: bridge
