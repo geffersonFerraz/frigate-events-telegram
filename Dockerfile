@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the compiled binary from the build stage
-COPY --from=builder /app/frigate-events-telegram .
+COPY --from=builder /app/frigate-events .
 COPY --from=builder /app/config.yaml.example .
 
 # Create non-root user
@@ -38,4 +38,4 @@ USER appuser
 ENV TZ=America/Sao_Paulo
 
 # Run the binary
-CMD ["./frigate-events-telegram"]
+CMD ["./frigate-events"]
