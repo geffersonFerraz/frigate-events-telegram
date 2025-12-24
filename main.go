@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"syscall"
@@ -72,18 +74,18 @@ func main() {
 		frigateEvent := events.NewFrigateEvent(tgBot, cfg)
 
 		for delivery := range deliveries {
-
+			randomString := generateRandonString()
 			var eventT events.MQTTFrigateEvent
 			err := json.Unmarshal(delivery.Body, &eventT)
 			if err != nil {
-				log.Printf("Error unmarshalling message: %v", err)
+				log.Printf("%s - Error unmarshalling message: %v", randomString, err)
 				delivery.Ack(false)
 				continue
 			}
 
 			processing, err := redis.IsEventProcessing(ctx, eventT.After.ID, "video")
 			if err != nil {
-				log.Printf("Error checking if event is processing: %v", err)
+				log.Printf("%s - Error checking if event is processing: %v", randomString, err)
 				delivery.Ack(false)
 				continue
 			}
@@ -96,11 +98,11 @@ func main() {
 			go func(event events.MQTTFrigateEvent) {
 				redis.MarkEventAsProcessing(ctx, event.After.ID, "video")
 
-				log.Printf("Received message: %s\n", event.Before.ID)
+				log.Printf("%s - Received message: %s\n", randomString, event.Before.ID)
 
 				processed, err := redis.IsEventProcessed(ctx, event.After.ID, "video")
 				if err != nil {
-					log.Fatalf("Error checking if event is processed: %v", err)
+					log.Fatalf("%s - Error checking if event is processed: %v", randomString, err)
 				}
 				if processed {
 					delivery.Ack(false)
@@ -109,7 +111,7 @@ func main() {
 
 				processed, err = frigateEvent.ProcessVideoEvent(ctx, event)
 				if err != nil {
-					log.Printf("Error processing video event: %v", err)
+					log.Printf("%s - Error processing video event: %v", randomString, err)
 					delivery.Reject(true)
 					return
 				}
@@ -117,7 +119,7 @@ func main() {
 					delivery.Ack(false)
 					return
 				}
-
+				log.Printf("%s - Event processed successfully: %s\n", randomString, event.After.ID)
 				redis.MarkEventAsProcessed(ctx, event.After.ID, "video")
 				delivery.Ack(false)
 			}(eventT)
@@ -131,14 +133,16 @@ func main() {
 		}
 
 		if err := mqttClient.Subscribe(cfg.MQTTTopic, 1, func(c mqtt.Client, m mqtt.Message) {
+			randomString := generateRandonString()
+			log.Printf("%s - Received message from MQTT: %s\n", randomString, string(m.Payload()))
 			rabbit.Publish(ctx, cfg.RabbitMQExchange, cfg.RabbitMQRoutingKey, m.Payload())
 			var event events.MQTTFrigateEvent
 			err := json.Unmarshal(m.Payload(), &event)
 			if err != nil {
-				log.Printf("Error unmarshalling message: %v", err)
+				log.Printf("%s - Error unmarshalling message: %v", randomString, err)
 				return
 			}
-			log.Printf("Published message to RabbitMQ: %s\n", event.Before.ID)
+			log.Printf("%s - Published message to RabbitMQ: %s\n", randomString, event.Before.ID)
 		}); err != nil {
 			log.Fatalf("Error subscribing to MQTT topic: %v", err)
 		}
@@ -153,4 +157,8 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
+}
+
+func generateRandonString() string {
+	return fmt.Sprintf("%d", rand.Intn(1000000))
 }

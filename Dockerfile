@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Compile the binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o frigate-events-telegram -ldflags="-s -w"
+RUN CGO_ENABLED=0 GOOS=linux go build -o frigate-events -ldflags="-s -w"
 
 # Final stage
 FROM ubuntu:22.04
